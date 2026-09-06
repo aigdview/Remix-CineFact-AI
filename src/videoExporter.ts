@@ -1,0 +1,155 @@
+import { ProcessedClip, Subtitle, SearchQuery, HighlightSegment, SocialAspectRatio } from "./types.js";
+
+export interface RenderOptions {
+  videoElement: HTMLVideoElement | null;
+  videoSrc: string | null;
+  sourceMode?: "upload";
+  serverFilePath?: string | null;
+  videoBase64?: string | null;
+  file?: File | null;
+  clipStartSec: number;
+  clipEndSec: number;
+  highlightSegments?: HighlightSegment[];
+  totalDuration: number;
+  aspectRatio: SocialAspectRatio;
+  subtitles: Subtitle[];
+  verifiedClaims: SearchQuery[];
+  clipTitle: string;
+  onProgress: (percent: number, message: string) => void;
+  shouldCancel: () => boolean;
+}
+
+export interface RenderResult {
+  blob: Blob;
+  downloadUrl: string;
+  fileName: string;
+  durationSec: number;
+}
+
+/**
+ * Server-Side FFmpeg Render Exporter
+ * Slices exact highlight with speech envelope padding (+/- 0.5s),
+ * reframes to target aspect ratio (9:16, 1:1, 4:5, 16:9), and renders pure clean video footage.
+ */
+export async function exportVideoViaServerFFmpeg(
+  options: RenderOptions
+): Promise<RenderResult> {
+  const {
+    sourceMode = "upload",
+    serverFilePath,
+    videoSrc,
+    videoBase64,
+    file,
+    clipStartSec,
+    clipEndSec,
+    highlightSegments,
+    aspectRatio,
+    subtitles,
+    verifiedClaims,
+    clipTitle,
+    onProgress,
+    shouldCancel
+  } = options;
+
+  if (shouldCancel()) {
+    throw new Error("Export cancelled by user.");
+  }
+
+  onProgress(10, "Connecting to server-side FFmpeg rendering engine...");
+
+  let base64Payload = videoBase64;
+  if (!serverFilePath && sourceMode === "upload" && !base64Payload && file) {
+    onProgress(15, "Reading uploaded video file buffer for server rendering...");
+    base64Payload = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("Failed to read uploaded video file"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  if (!serverFilePath && sourceMode === "upload" && !base64Payload && !videoSrc) {
+    throw new Error("No video media buffer available. Please upload an MP4/WebM file to render.");
+  }
+
+  const activeClaim =
+    verifiedClaims.find(
+      (c) => c.status === "success" || (c.results && c.results.length > 0)
+    ) || verifiedClaims[0];
+
+  const payload: any = {
+    sourceType: sourceMode,
+    serverFilePath: serverFilePath || null,
+    presetSrc: videoSrc,
+    videoBase64: base64Payload || null,
+    clipStartSec,
+    clipEndSec,
+    highlightSegments: highlightSegments || [],
+    aspectRatio,
+    subtitles,
+    verifiedClaim: activeClaim,
+    clipTitle
+  };
+
+  if (shouldCancel()) {
+    throw new Error("Export cancelled by user.");
+  }
+
+  onProgress(35, "Encoding high-bitrate clean video stream (within 45s)...");
+
+  const response = await fetch("/api/export-video", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    let errorDetail = "Server video export failed.";
+    try {
+      const errJson = await response.json();
+      errorDetail = errJson.error || errorDetail;
+    } catch (e) {
+      errorDetail = await response.text();
+    }
+    if (errorDetail.includes("Command failed:") || errorDetail.includes("ffmpeg -y")) {
+      errorDetail = "Video compilation encountered a frame encoding error. Please try adjusting highlight boundaries or re-exporting.";
+    }
+    throw new Error(errorDetail);
+  }
+
+  if (shouldCancel()) {
+    throw new Error("Export cancelled by user.");
+  }
+
+  onProgress(85, "Downloading finalized MP4 video container...");
+
+  const blob = await response.blob();
+  const downloadUrl = URL.createObjectURL(blob);
+  const cleanTitle = (clipTitle || "Highlight")
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
+    .slice(0, 30);
+  const fileName = `CineFact_45s_${cleanTitle}_${aspectRatio.replace(":", "x")}.mp4`;
+
+  onProgress(100, "Render complete! MP4 file downloaded successfully.");
+
+  return {
+    blob,
+    downloadUrl,
+    fileName,
+    durationSec: Math.max(1, clipEndSec - clipStartSec + 1)
+  };
+}
+
+/**
+ * Main export function to compile 45s MP4 social short.
+ * All sources (uploaded MP4/WebM videos and local presets) are processed
+ * exclusively through server-side FFmpeg to guarantee frame accuracy, zero seek lag,
+ * accurate audio-video synchronization, and clean video frame rendering.
+ */
+export async function export45sSocialVideo(
+  options: RenderOptions
+): Promise<RenderResult> {
+  return await exportVideoViaServerFFmpeg(options);
+}

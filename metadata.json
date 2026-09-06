@@ -1,0 +1,10 @@
+{
+  "name": "Remix CineFact AI",
+  "description": "An AI-powered video highlight extraction, fact-checking, Studio Clearance Dossier, and Director's Multi-Cut workstation powered by Gemini 3.8 Flash and Parallel Web Systems.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
