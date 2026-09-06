@@ -2,6 +2,24 @@
 
 All notable changes to the CineFact AI platform are documented in this file.
 
+## [2.8.4] - 2026-09-05
+
+### Fixed
+- **Dev Server Startup (`ReferenceError: __dirname is not defined`)**:
+  - Resolved fatal server startup crash in development mode under ES Module runtime (`"type": "module"` in `package.json` with `tsx`).
+  - Removed CommonJS `__dirname` references in `server.ts` in favor of portable `process.cwd()` path resolution and standard environment detection (`K_SERVICE`, `GOOGLE_CLOUD_PROJECT`, `NODE_ENV`).
+  - Verified local dev server boots cleanly on port 3000 and responds to `/api/health` with `{"status":"ok"}`.
+- **Cloud Run Production Deployment & Service Stability**:
+  - **Dependency Scoping for Container Build**: Moved `esbuild` from `devDependencies` to `dependencies` in `package.json` so container buildpacks enforcing `NODE_ENV=production` can execute `npm run build` without missing-binary errors.
+  - **Explicit Production Flag in Start Script**: Updated `"start"` script to `NODE_ENV=production node dist/server.cjs` ensuring Cloud Run boots directly into bundled production static-serving mode.
+  - **Cloud Run Environment Detection**: Enhanced `startServer()` in `server.ts` to detect Cloud Run containers via `K_SERVICE` or `GOOGLE_CLOUD_PROJECT`, preventing accidental initialization of the interactive Vite development server and HMR WebSocket in headless production.
+  - **Dynamic Vite Middleware Import**: Converted top-level `vite` imports in `server.ts` to scoped dynamic imports (`await import("vite")`) executed only when running in development mode, stripping runtime Vite dependencies from the production bundle.
+  - **Filesystem Fallback for Container Safety**: Wrapped temporary working directory initialization (`tmp_exports`, `tmp_grounding`, `tmp_uploads`) with automatic `/tmp` fallback to prevent startup failures on read-only or restricted container filesystems.
+
+### Changed
+- **Version Alignment**:
+  - Bumped platform and clearance auditor agent version to `2.8.4` across `package.json`, `server.ts`, and `src/types.ts`.
+
 ## [2.8.3] - 2026-09-05
 
 ### Fixed

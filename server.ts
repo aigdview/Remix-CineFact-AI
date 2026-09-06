@@ -3,7 +3,6 @@ import path from "path";
 import fs from "fs";
 import { exec, spawn } from "child_process";
 import { promisify } from "util";
-import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -39,13 +38,30 @@ function withTimeout<T>(promise: Promise<T>, ms: number, timeoutMsg: string): Pr
   });
 }
 
-// Ensure tmp directories exist
-const tmpExportsDir = path.join(process.cwd(), "tmp_exports");
-const tmpGroundingDir = path.join(process.cwd(), "tmp_grounding");
-const tmpUploadsDir = path.join(process.cwd(), "tmp_uploads");
-if (!fs.existsSync(tmpExportsDir)) fs.mkdirSync(tmpExportsDir, { recursive: true });
-if (!fs.existsSync(tmpGroundingDir)) fs.mkdirSync(tmpGroundingDir, { recursive: true });
-if (!fs.existsSync(tmpUploadsDir)) fs.mkdirSync(tmpUploadsDir, { recursive: true });
+// Safely ensure tmp directories exist without crashing on restricted filesystems
+function getSafeTmpDir(name: string): string {
+  const localDir = path.join(process.cwd(), name);
+  try {
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    return localDir;
+  } catch (err) {
+    const fallbackDir = path.join("/tmp", name);
+    try {
+      if (!fs.existsSync(fallbackDir)) {
+        fs.mkdirSync(fallbackDir, { recursive: true });
+      }
+      return fallbackDir;
+    } catch (fallbackErr) {
+      return "/tmp";
+    }
+  }
+}
+
+const tmpExportsDir = getSafeTmpDir("tmp_exports");
+const tmpGroundingDir = getSafeTmpDir("tmp_grounding");
+const tmpUploadsDir = getSafeTmpDir("tmp_uploads");
 
 // Lazy initialization of Gemini client to prevent crash if key is missing on start
 let aiInstance: GoogleGenAI | null = null;
@@ -1291,7 +1307,7 @@ Core Directives:
       generatedAt: new Date().toISOString(),
       overallStatus: "APPROVED FOR BROADCAST",
       complianceScore: 96,
-      auditorAgent: "CineFact Studio Clearance Agent v2.8.3 (Parallel Grounded)",
+      auditorAgent: "CineFact Studio Clearance Agent v2.8.4 (Parallel Grounded)",
       auditHash,
       records: clearanceRecords,
       summary: `Automated multi-agent legal & factual clearance completed for "${title}". All ${clearanceRecords.length} primary spoken claims have been cross-referenced with Parallel Web Systems web grounding. The media meets standard broadcast, OTT streaming, and digital distribution guidelines with negligible liability exposure.`,
@@ -1347,7 +1363,7 @@ app.post("/api/generate-clearance-dossier", async (req, res) => {
       `**Dossier ID**: \`${dossierId}\``,
       `**Audit Hash**: \`${auditHash}\``,
       `**Date**: ${new Date().toUTCString()}`,
-      `**Auditor Agent**: CineFact Studio Clearance Agent v2.8.3 (Parallel Web Systems Grounded)`,
+      `**Auditor Agent**: CineFact Studio Clearance Agent v2.8.4 (Parallel Web Systems Grounded)`,
       `**Clearance Status**: APPROVED FOR BROADCAST (96% Compliance Score)`,
       ``,
       `---`,
@@ -1423,7 +1439,7 @@ app.post("/api/generate-clearance-dossier", async (req, res) => {
       generatedAt: new Date().toISOString(),
       overallStatus: "APPROVED FOR BROADCAST",
       complianceScore: 96,
-      auditorAgent: "CineFact Studio Clearance Agent v2.8.3 (Parallel Grounded)",
+      auditorAgent: "CineFact Studio Clearance Agent v2.8.4 (Parallel Grounded)",
       auditHash,
       records,
       summary: `Automated multi-agent legal & factual clearance completed for "${projectTitle}". All ${records.length} primary spoken claims have been cross-referenced with Parallel Web Systems web grounding. The media meets standard broadcast and digital distribution guidelines with negligible liability exposure.`,
@@ -1867,7 +1883,13 @@ app.post("/api/export-video", async (req, res) => {
 
 // Configure Vite middleware in development or serve built files in production
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  const isProduction =
+    process.env.NODE_ENV === "production" ||
+    process.env.K_SERVICE !== undefined ||
+    process.env.GOOGLE_CLOUD_PROJECT !== undefined;
+
+  if (!isProduction) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -1882,7 +1904,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[CineFact AI Server] Running on http://localhost:${PORT} with Gemini 3.8 Flash in ${process.env.NODE_ENV || "development"} mode.`);
+    console.log(`[CineFact AI Server] Running on http://localhost:${PORT} with Gemini 3.8 Flash in ${isProduction ? "production" : "development"} mode.`);
   });
 }
 

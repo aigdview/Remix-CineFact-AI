@@ -139,7 +139,7 @@ export interface StudioClearanceDossier {
   generatedAt: string;
   overallStatus: "APPROVED FOR BROADCAST" | "CONDITIONAL CLEARANCE" | "REQUIRES EDITORIAL AUDIT";
   complianceScore: number; // e.g. 94%
-  auditorAgent: string; // "CineFact Studio Clearance Agent v2.8.3 (Parallel Grounded)"
+  auditorAgent: string; // "CineFact Studio Clearance Agent v2.8.4 (Parallel Grounded)"
   records: StudioClearanceRecord[];
   summary: string;
   recommendedDisclaimers?: string[];
